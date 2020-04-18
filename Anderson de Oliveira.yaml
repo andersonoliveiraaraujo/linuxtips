@@ -1,0 +1,221 @@
+Resources:
+  GrupoIAM:
+    Type: AWS::IAM::Group
+    Properties: 
+       GroupName: Operations
+  S3:
+   Type: AWS::S3::Bucket
+   Properties:
+      BucketName: anderson.araujo.cloudtrail
+      PublicAccessBlockConfiguration: 
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+  
+  BucketPolicy: 
+    Type: AWS::S3::BucketPolicy
+    Properties: 
+       Bucket: 
+         Ref: S3
+       PolicyDocument: 
+         Version: "2012-10-17"
+         Statement: 
+           - 
+             Sid: "AWSCloudTrailAclCheck"
+             Effect: "Allow"
+             Principal: 
+               Service: "cloudtrail.amazonaws.com"
+             Action: "s3:GetBucketAcl"
+             Resource: 
+               !Sub |-
+                 arn:aws:s3:::${S3}
+           - 
+             Sid: "AWSCloudTrailWrite"
+             Effect: "Allow"
+             Principal: 
+               Service: "cloudtrail.amazonaws.com"
+             Action: "s3:PutObject"
+             Resource:
+               !Sub |-
+                 arn:aws:s3:::${S3}/AWSLogs/${AWS::AccountId}/*
+             Condition: 
+               StringEquals:
+                 s3:x-amz-acl: "bucket-owner-full-control"
+  
+  Trail:
+    DependsOn: 
+        - BucketPolicy  
+    Type: AWS::CloudTrail::Trail
+    Properties: 
+       S3BucketName: 
+         Ref: S3
+       IsLogging: true
+       IsMultiRegionTrail: false  
+  
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.100.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+      - Key: Name
+        Value: Giropops
+  
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    DependsOn: VPC
+    
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  SubnetPublica:
+    Type: AWS::EC2::Subnet
+    Properties:
+      CidrBlock: 10.100.20.0/24
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [0, !GetAZs '' ]
+      Tags:
+      - Key: Name
+        Value: Subnet-Publica
+
+  SubnetPrivada:
+    Type: AWS::EC2::Subnet
+    Properties:
+      CidrBlock: 10.100.50.0/24
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [0, !GetAZs '' ]
+      Tags:
+      - Key: Name
+        Value: Subnet-Privada
+        
+  NATGatewayElasticIp:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: VPC
+      
+  NATGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NATGatewayElasticIp.AllocationId
+      SubnetId: !Ref SubnetPublica
+        
+  PrivadaRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags: 
+      - Key: Name
+        Value: Privada
+
+  PrivadaRoute1:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivadaRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NATGateway
+      
+  PublicaRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags: 
+      - Key: Name
+        Value: Publica
+        
+  PublicaRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicaRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+      
+  PublicaRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicaRouteTable
+      SubnetId: !Ref SubnetPublica
+      
+  PrivadaRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivadaRouteTable
+      SubnetId: !Ref SubnetPrivada
+        
+  WEBSecGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: Webservers
+      GroupDescription: Sec Group para os Web Servers
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - 
+          IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+
+  DBSecGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: Databases
+      GroupDescription: Sec Group para os Databases
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - 
+          IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          CidrIp: 0.0.0.0/0
+          
+  ElasticIp:
+    Type: AWS::EC2::EIP
+    Properties:
+      InstanceId: !Ref WEBInstance
+      Domain: VPC
+          
+  WEBInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      BlockDeviceMappings:
+        -
+          DeviceName: "/dev/sda1"
+          Ebs:
+            VolumeSize: 8
+            VolumeType: gp2
+      InstanceType: t3.nano
+      ImageId: ami-03e1e4abf50e14ded
+      KeyName: MyKey
+      Monitoring: true
+      SecurityGroupIds:
+        - !Ref WEBSecGroup
+      SubnetId: !Ref SubnetPublica
+      Tags:
+        -
+          Key: Name
+          Value: Servidor Web
+          
+  DBInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      BlockDeviceMappings:
+        -
+          DeviceName: "/dev/sda1"
+          Ebs:
+            VolumeSize: 8
+            VolumeType: gp2
+      InstanceType: t3.nano
+      ImageId: ami-03e1e4abf50e14ded
+      KeyName: MyKey
+      Monitoring: true
+      SecurityGroupIds:
+        - !Ref DBSecGroup
+      SubnetId: !Ref SubnetPrivada
+      Tags:
+        -
+          Key: Name
+          Value: Servidor DB PostgreSQL
