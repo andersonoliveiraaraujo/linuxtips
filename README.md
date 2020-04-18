@@ -20,4 +20,4 @@ Não realizados pois apresentava erro do modo como eu tentava resolver:
 * Criar iam role e 'attachar' a um grupo de usuários de Operação, com permissão PowerUsers
 * Habilitar as seguintes regras de AWS Config: required-tags, root-account-mfa-enabled, iam-password-policy e approved-amis-by-id
 
-Obs: Só está sendo possível subir este CloudFormation na região São Paulo. Na região Virgina apresenta erro. Não testei em outras regiões.
+Obs: Só está sendo possível subir este CloudFormation Anderson de Oliveira.yaml na região São Paulo. Na região Virgina apresenta erro. Não testei em outras regiões.
